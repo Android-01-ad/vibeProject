@@ -2,7 +2,8 @@ using UnityEngine;
 
 namespace RoguelikeUnity
 {
-    // 플레이어의 직업/전직 단계에 따라 스프라이트를 전환하는 컨트롤러입니다.
+    // 플레이어의 직업에 따라 스프라이트를 전환하는 컨트롤러입니다.
+    // 현재는 Warrior와 Mage만 구분하며, 직업 교체 시 해당 스프라이트를 적용합니다.
     public sealed class PlayerClassSpriteController : MonoBehaviour
     {
         public enum SpriteRank
@@ -15,13 +16,13 @@ namespace RoguelikeUnity
         // 스프라이트를 적용할 렌더러입니다.
         [SerializeField] private SpriteRenderer spriteRenderer;
 
-        // 검사 직업군 스프라이트입니다.
+        // 검사 계열 스프라이트입니다.
         [Header("Warrior Sprites")]
         [SerializeField] private Sprite warriorNoviceSprite;
         [SerializeField] private Sprite warriorVeteranSprite;
         [SerializeField] private Sprite warriorMasterSprite;
 
-        // 마법사 직업군 스프라이트입니다.
+        // 마법사 계열 스프라이트입니다.
         [Header("Mage Sprites")]
         [SerializeField] private Sprite mageNoviceSprite;
         [SerializeField] private Sprite mageVeteranSprite;
@@ -33,7 +34,8 @@ namespace RoguelikeUnity
             spriteRenderer = GetComponent<SpriteRenderer>();
         }
 
-        // 직업에 맞는 스프라이트를 적용합니다.
+        // 현재 직업에 맞는 스프라이트를 적용합니다.
+        // spriteRank는 현재 사용 구조상 기본값으로 활용되며, 직업 교체 시 자동으로 적절한 스프라이트를 선택합니다.
         public void Apply(PlayerCharacter.ClassType classType, SpriteRank spriteRank)
         {
             if (spriteRenderer == null)

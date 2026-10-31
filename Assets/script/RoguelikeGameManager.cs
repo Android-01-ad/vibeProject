@@ -7,8 +7,8 @@ using Random = UnityEngine.Random;
 
 namespace RoguelikeUnity
 {
-    // 게임 전체 흐름을 관리하는 매니저입니다.
-    // 플레이어 턴, 적 턴, 보상 선택, 덱 관리, 층 이동 같은 로직을 담당합니다.
+    // 게임 전체 흐름을 관리하는 메인 매니저입니다.
+    // 스테이지 전환, 턴 제어, 보상 처리, 덱 관리자 연결, 개발자 모드 기능을 담당합니다.
     public sealed class RoguelikeGameManager : MonoBehaviour
     {
         public enum GameResult
@@ -18,10 +18,10 @@ namespace RoguelikeUnity
             Defeat
         }
 
-        // 현재 스테이지 유형입니다.
-        // 전투 스테이지: 적을 쓰러뜨리는 전투 구간
-        // 보상 스테이지: 카드 보상을 선택하는 구간
-        // 보스 스테이지: 보스를 상대하는 특수 구간
+        // 현재 스테이지의 분류입니다.
+        // Battle: 일반 전투 구간
+        // Reward: 카드 보상 선택 구간
+        // Boss: 보스 전투 구간
         public enum StageType
         {
             Battle,
@@ -38,19 +38,19 @@ namespace RoguelikeUnity
         // 현재 방의 적 목록입니다.
         [SerializeField] private List<EnemyCharacter> roomEnemies = new List<EnemyCharacter>();
 
-        // 보스 캐릭터 참조입니다. 보스가 죽으면 승리 판정을 처리합니다.
+        // 보스 캐릭터 참조입니다. 보스가 처치되면 승리 판정을 발생시킵니다.
         [SerializeField] private BossCharacter boss;
 
         // 덱 화면 UI를 제어하는 컨트롤러입니다.
         [SerializeField] private DeckScreenController deckScreen;
 
-        // 카드 덱 관리 객체입니다.
+        // 하위 카드와 상위 카드 보관을 관리하는 덱 관리자입니다.
         private DeckManager deckManager;
 
-        // 카드 보상 후보가 될 수 있는 전체 카드 풀입니다.
+        // 보상으로 제공될 수 있는 전체 카드 풀입니다.
         private readonly List<CardDefinition> cardPool = new List<CardDefinition>();
 
-        // 현재 방 클리어 후 제공되는 보상 카드 목록입니다.
+        // 현재 방을 클리어한 후 선택 가능한 보상 카드 목록입니다.
         private List<CardDefinition> currentRewards = new List<CardDefinition>();
 
         // 현재 턴이 플레이어 턴인지 여부입니다.
@@ -86,7 +86,8 @@ namespace RoguelikeUnity
         // 현재 스테이지 종류를 외부에서 읽기 위한 프로퍼티입니다.
         public StageType CurrentStage => currentStage;
 
-        // 개발자 모드가 활성화되었는지 여부입니다.
+        // 개발자 모드 활성 상태입니다.
+        // 활성화되면 T + 9 입력으로 모드를 전환하고 + 키로 스테이지를 바로 넘길 수 있습니다.
         private bool developerMode;
 
         // 개발자 모드 상태를 외부에서 확인할 수 있습니다.
@@ -107,8 +108,8 @@ namespace RoguelikeUnity
         // 게임결과가 바뀔 때 외부에서 구독할 수 있는 이벤트입니다.
         public event Action<GameResult> GameEnded;
 
-        // 게임 시작 시 플레이어의 직업을 선택합니다.
-        // 검사(Warrior) 또는 마법사(Mage)를 선택할 수 있습니다.
+        // 플레이어 직업을 선택합니다.
+        // Warrior(검사) 또는 Mage(마법사) 중 하나를 선택합니다.
         public void SelectClass(PlayerCharacter.ClassType selectedClass)
         {
             if (player == null) return;
@@ -125,7 +126,7 @@ namespace RoguelikeUnity
                 SelectClass(PlayerCharacter.ClassType.Warrior);
         }
 
-        // 전투 시작 전에 플레이어 직업을 초기화하고 상태를 리셋합니다.
+        // 새로운 런을 시작할 때 플레이어 상태와 스테이지를 초기화합니다.
         public void InitializeRun(PlayerCharacter.ClassType selectedClass)
         {
             if (deckManager == null)
@@ -153,7 +154,7 @@ namespace RoguelikeUnity
             InitializeRun(selectedIndex == 1 ? PlayerCharacter.ClassType.Mage : PlayerCharacter.ClassType.Warrior);
         }
 
-        // 게임 오브젝트가 처음 활성화될 때 초기 상태를 설정합니다.
+        // 오브젝트가 처음 활성화될 때 덱 관리자와 보스 바인딩을 초기화합니다.
         private void Awake()
         {
             deckManager = new DeckManager();
@@ -200,7 +201,7 @@ namespace RoguelikeUnity
         }
 
         // 카드 풀을 로드합니다.
-        // StreamingAssets/cards.csv를 읽어 전역 카드 목록을 구성합니다.
+        // StreamingAssets/cards.csv를 읽어 보상 후보 목록을 구성합니다.
         private IEnumerator LoadCardPool()
         {
             yield return CardCatalog.Load(cards => cardPool.AddRange(cards));
@@ -259,7 +260,7 @@ namespace RoguelikeUnity
                 playerTurn = true;
         }
 
-        // 방을 클리어했을 때 보상 카드를 랜덤으로 선택해 제공합니다.
+        // 방을 클리어했을 때 랜덤 보상 카드를 선택 목록으로 제공합니다.
         private void OpenCardReward()
         {
             currentStage = StageType.Reward;
@@ -279,7 +280,8 @@ namespace RoguelikeUnity
             CardRewardOffered?.Invoke(currentRewards);
         }
 
-        // 보상 카드 중 하나를 선택했을 때 호출됩니다.
+        // 보상 목록에서 카드를 선택했을 때 호출됩니다.
+        // 선택한 카드는 보유 덱에 추가되고 다음 층으로 진행합니다.
         public void ChooseCardReward(int choiceIndex)
         {
             if (IsGameEnded || !rewardPending || choiceIndex < 0 || choiceIndex >= currentRewards.Count) return;
@@ -293,8 +295,8 @@ namespace RoguelikeUnity
             AdvanceDepth();
         }
 
-        // 다음 층으로 이동하는 처리입니다.
-        // 3층마다 보스 스테이지가 등장하고, 그 외에는 전투 스테이지를 유지합니다.
+        // 다음 층으로 이동합니다.
+        // depth가 3의 배수마다 보스 스테이지가 생성되고, 나머지는 전투 스테이지로 유지됩니다.
         private void AdvanceDepth()
         {
             if (IsGameEnded) return;
@@ -307,7 +309,7 @@ namespace RoguelikeUnity
             // Connect room generation here, then assign the new room's enemies to roomEnemies.
         }
 
-        // 개발자 모드에서 스테이지를 한 번 건너뛰는 메서드입니다.
+        // 개발자 모드에서 스테이지를 한 번 건너뛰어 시연 속도를 높입니다.
         public void SkipStageForDemo()
         {
             if (!developerMode || IsGameEnded) return;
@@ -322,7 +324,8 @@ namespace RoguelikeUnity
             Debug.Log("개발자 모드: 플러스 키로 스테이지를 건너뜁니다.");
         }
 
-        // 개발자 모드 및 스테이지 건너뛰기 입력을 처리합니다.
+        // 개발자 모드 토글과 스테이지 스킵 입력을 처리합니다.
+        // T + 9를 누르면 개발자 모드가 토글되고, 개발자 모드가 활성화된 상태에서 + 키로 스테이지를 넘길 수 있습니다.
         private void Update()
         {
             bool toggleDeveloperMode = (Input.GetKey(KeyCode.T) && (Input.GetKeyDown(KeyCode.Alpha9) || Input.GetKeyDown(KeyCode.Keypad9)))
@@ -345,21 +348,21 @@ namespace RoguelikeUnity
                 SkipStageForDemo();
         }
 
-        // 덱 화면을 표시합니다.
+        // 덱 화면을 열어 현재 보유/드로우/버리기 덱 상태를 표시합니다.
         public void ShowDeck()
         {
             if (deckScreen != null && deckManager != null) deckScreen.Show(deckManager.Deck);
             else if (deckManager != null) Debug.Log($"현재 보유 덱: {deckManager.Deck.Count}장 / 드로우 덱: {deckManager.DrawDeck.Count}장 / 버리기 덱: {deckManager.DiscardDeck.Count}장");
         }
 
-        // 덱 화면을 숨깁니다.
+        // 덱 화면을 닫습니다.
         public void HideDeck()
         {
             if (deckScreen != null) deckScreen.Hide();
         }
 
-        // 휴식 방에서 체력을 회복시켜 줍니다.
-        // 기본값은 8이며 필요시 다른 회복량으로 조정할 수 있습니다.
+        // 휴식 방에서 플레이어 체력을 회복시킵니다.
+        // 기본값은 8이며, 다른 회복량을 넘겨서 상황에 맞게 조정할 수 있습니다.
         public void RestoreAtRestRoom(int amount = 8)
         {
             if (player != null) player.Heal(amount);

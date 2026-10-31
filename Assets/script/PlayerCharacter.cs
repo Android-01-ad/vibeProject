@@ -4,8 +4,8 @@ using UnityEngine;
 
 namespace RoguelikeUnity
 {
-    // 플레이어 캐릭터의 상태와 전투 행동을 관리하는 컴포넌트입니다.
-    // 적과의 전투, 체력 회복, 공격력 증가, 직업 선택과 전직 로직이 여기에 포함됩니다.
+    // 플레이어 캐릭터의 상태와 기본 행동을 관리하는 컴포넌트입니다.
+    // 체력, 공격력, 직업 전환, 카드 사용 시 필드 오브젝트 상호작용 등을 담당합니다.
     public sealed class PlayerCharacter : MonoBehaviour
     {
         public enum ClassType
@@ -64,7 +64,8 @@ namespace RoguelikeUnity
             ApplyClassStats();
         }
 
-        // 게임 시작 시 직업을 지정합니다.
+        // 직업을 지정합니다.
+        // 검사는 Warrior, 마법사는 Mage로 분류되며 전환 시 체력과 공격력, 스프라이트가 즉시 갱신됩니다.
         public void SetClass(ClassType selectedClass)
         {
             classType = selectedClass;
@@ -72,15 +73,15 @@ namespace RoguelikeUnity
             Hp = maxHp;
         }
 
-        // 직업을 검사와 마법사 사이에서 전환합니다.
-        // 새 전직/전직 해제 로직을 구현할 때 그대로 사용할 수 있습니다.
+        // 현재 직업을 검사와 마법사 사이에서 토글합니다.
+        // 단순 전직/강등 로직이 아니라 클래스 교체용 메서드입니다.
         public void ToggleClass()
         {
             SetClass(classType == ClassType.Warrior ? ClassType.Mage : ClassType.Warrior);
         }
 
-        // 특정 장비/도구 카드 목록을 검사해 전직 조건을 만족하면 직업을 전환합니다.
-        // 장비가 검사 계열이면 검사로, 마법 계열이면 마법사로 바뀝니다.
+        // 장비/도구 영역의 상위 카드 조합을 검사해 직업을 결정합니다.
+        // 검사 계열 카드가 우세하면 Warrior, 마법 계열 카드가 우세하면 Mage로 전환됩니다.
         public void UpdateClassByUpperCards(IEnumerable<CardDefinition> equipmentCards, IEnumerable<CardDefinition> toolCards)
         {
             if (equipmentCards == null && toolCards == null)
@@ -126,7 +127,7 @@ namespace RoguelikeUnity
             return mageKeywords.Any(keyword => combinedText.Contains(keyword));
         }
 
-        // 직업에 따라 체력, 공격력을 다시 계산합니다.
+        // 직업에 따라 최대 체력, 공격력, 직업명과 스프라이트를 다시 계산합니다.
         private void ApplyClassStats()
         {
             switch (classType)

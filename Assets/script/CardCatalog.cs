@@ -7,8 +7,8 @@ using UnityEngine.Networking;
 
 namespace RoguelikeUnity
 {
-    // 카드 데이터를 CSV 파일에서 읽어와 CardDefinition 리스트로 변환하는 정적 유틸리티
-    // 다른 스크립트에서 "카드 목록 로드"가 필요할 때 이 클래스를 호출하면 됩니다.
+    // CSV 기반 카드 정보를 읽어 CardDefinition 리스트로 변환하는 정적 유틸리티입니다.
+    // 카드 목록 로딩이 필요한 곳에서 호출해 카드 풀을 구성합니다.
     public static class CardCatalog
     {
         // cards.csv를 비동기적으로 읽고, 파싱이 끝나면 콜백으로 결과를 전달합니다.
@@ -50,10 +50,10 @@ namespace RoguelikeUnity
             }
         }
 
-        // CSV 문자열을 한 줄씩 읽어 CardDefinition 객체들의 리스트로 변환합니다.
+        // CSV 문자열을 한 줄씩 읽어 CardDefinition 리스트로 변환합니다.
         // 형식 예시:
-        // Name,Description
-        // 공격 카드, 적에게 5의 피해를 줍니다.
+        // Name,Description, Tier
+        // 공격 카드, 적에게 5의 피해를 줍니다., Lower
         private static List<CardDefinition> Parse(string csv)
         {
             var cards = new List<CardDefinition>();
@@ -72,11 +72,11 @@ namespace RoguelikeUnity
                 // 한 줄을 CSV 형식에 맞게 나누어 컬럼 목록을 얻습니다.
                 var fields = ParseLine(line);
 
-                // 헤더 라인(Name, Description)은 건너뜁니다.
+                // 헤더 라인(Name, Description, Tier)은 건너뜁니다.
                 if (fields.Count >= 2 && fields[0].Trim().Equals("Name", StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                // 최소 컬럼 수와 Name 값이 비어 있지 않은지 검증합니다.
+                // 최소로 필요한 컬럼은 이름과 설명이며, Tier는 선택 항목입니다.
                 if (fields.Count < 2 || string.IsNullOrWhiteSpace(fields[0]))
                     throw new FormatException($"{i + 1}행에 Name 또는 Description 열이 없습니다.");
 
