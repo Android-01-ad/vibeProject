@@ -41,6 +41,10 @@ namespace RoguelikeUnity
         // 보스 캐릭터 참조입니다. 보스가 처치되면 승리 판정을 발생시킵니다.
         [SerializeField] private BossCharacter boss;
 
+        // 일반 전투 스테이지에서 생성되는 적 프리팹 또는 기본 적 원본입니다.
+        // 설정이 없으면 런타임에 스크립트로 하나를 자동 생성합니다.
+        [SerializeField] private EnemyCharacter battleEnemyPrefab;
+
         // 덱 화면 UI를 제어하는 컨트롤러입니다.
         [SerializeField] private DeckScreenController deckScreen;
 
@@ -108,6 +112,9 @@ namespace RoguelikeUnity
         // 게임결과가 바뀔 때 외부에서 구독할 수 있는 이벤트입니다.
         public event Action<GameResult> GameEnded;
 
+        // 패배 판정이 발생했을 때 외부에서 구독할 수 있는 게임 오버 이벤트입니다.
+        public event Action GameOvered;
+
         // 플레이어 직업을 선택합니다.
         // Warrior(검사) 또는 Mage(마법사) 중 하나를 선택합니다.
         public void SelectClass(PlayerCharacter.ClassType selectedClass)
@@ -139,7 +146,9 @@ namespace RoguelikeUnity
             currentStage = StageType.Battle;
             playerTurn = true;
             currentResult = GameResult.None;
+            roomEnemies.Clear();
             BindBoss();
+            SpawnBattleEnemy();
 
             if (player != null)
             {
@@ -195,7 +204,10 @@ namespace RoguelikeUnity
             if (result == GameResult.Victory)
                 Debug.Log("승리 판정: 보스를 처치했습니다.");
             else if (result == GameResult.Defeat)
+            {
                 Debug.Log("패배 판정: 플레이어가 전투에서 패배했습니다.");
+                GameOvered?.Invoke();
+            }
 
             GameEnded?.Invoke(result);
         }
@@ -209,6 +221,49 @@ namespace RoguelikeUnity
                 Debug.LogWarning("카드 후보가 없습니다. Assets/StreamingAssets/cards.csv를 확인하세요.");
         }
 
+        // 일반 전투 스테이지에서 적 하나를 생성합니다.
+        // 현재 구조는 한 번의 전투에 적 1마리만 등장하도록 제한합니다.
+        private void SpawnBattleEnemy()
+        {
+            roomEnemies.Clear();
+
+            if (currentStage != StageType.Battle)
+                return;
+
+            EnemyCharacter spawnedEnemy;
+            if (battleEnemyPrefab != null)
+            {
+                spawnedEnemy = Instantiate(battleEnemyPrefab, transform);
+            }
+            else
+            {
+                var enemyObject = new GameObject("BattleEnemy");
+                enemyObject.transform.SetParent(transform);
+                spawnedEnemy = enemyObject.AddComponent<EnemyCharacter>();
+            }
+
+            spawnedEnemy.gameObject.SetActive(true);
+            roomEnemies.Add(spawnedEnemy);
+            Debug.Log($"전투 스테이지 생성: {spawnedEnemy.EnemyName}");
+        }
+
+        // 전투 클리어 여부를 확인하고, 결과에 따라 다음 스테이지 또는 게임 종료를 처리합니다.
+        private void ResolveBattleOutcome()
+        {
+            if (IsGameEnded) return;
+
+            bool allEnemiesDefeated = roomEnemies.Count == 0 || roomEnemies.All(enemy => enemy == null || !enemy.IsAlive);
+            if (!allEnemiesDefeated) return;
+
+            if (currentStage == StageType.Boss)
+            {
+                EndGame(GameResult.Victory);
+                return;
+            }
+
+            OpenCardReward();
+        }
+
         // 플레이어가 적을 공격할 때 호출됩니다.
         public void PlayerAttack(EnemyCharacter target)
         {
@@ -216,10 +271,10 @@ namespace RoguelikeUnity
             playerTurn = false;
             player.Attack(target);
 
-            // 모든 적이 사망하면 보상을 열고 턴 종료 처리로 넘어갑니다.
+            // 적이 모두 사망하면 보상 단계로 진행합니다.
             if (roomEnemies.All(enemy => enemy == null || !enemy.IsAlive))
             {
-                OpenCardReward();
+                ResolveBattleOutcome();
                 return;
             }
 
@@ -305,8 +360,10 @@ namespace RoguelikeUnity
             currentStage = depth % 3 == 0 ? StageType.Boss : StageType.Battle;
             playerTurn = true;
 
+            if (currentStage == StageType.Battle)
+                SpawnBattleEnemy();
+
             Debug.Log($"스테이지 이동: {depth}층 / {currentStage}");
-            // Connect room generation here, then assign the new room's enemies to roomEnemies.
         }
 
         // 개발자 모드에서 스테이지를 한 번 건너뛰어 시연 속도를 높입니다.
