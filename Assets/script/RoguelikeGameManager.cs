@@ -8,7 +8,7 @@ using Random = UnityEngine.Random;
 namespace RoguelikeUnity
 {
     // 게임 전체 흐름을 관리하는 메인 매니저입니다.
-    // 스테이지 전환, 턴 제어, 보상 처리, 덱 관리자 연결, 개발자 모드 기능을 담당합니다.
+    // 스테이지 전환, 턴 제어, 보상 처리, 덱 관리자 연결, 개발자 모드 입력을 담당합니다.
     public sealed class RoguelikeGameManager : MonoBehaviour
     {
         public enum GameResult
@@ -57,8 +57,8 @@ namespace RoguelikeUnity
         // 현재 방을 클리어한 후 선택 가능한 보상 카드 목록입니다.
         private List<CardDefinition> currentRewards = new List<CardDefinition>();
 
-        // 현재 턴이 플레이어 턴인지 여부입니다.
-        private bool playerTurn = true;
+        // 턴 흐름을 별도 관리자에서 처리합니다.
+        private TurnManager turnManager;
 
         // 카드 보상이 아직 선택 대기 중인지 여부입니다.
         private bool rewardPending;
@@ -106,6 +106,9 @@ namespace RoguelikeUnity
         // 게임이 끝났는지 여부입니다.
         public bool IsGameEnded => currentResult != GameResult.None;
 
+        // 현재 턴이 플레이어 턴인지 여부입니다.
+        public bool IsPlayerTurn => turnManager != null && turnManager.IsPlayerTurn;
+
         // 카드 보상이 생성되었을 때 외부에 알리는 이벤트입니다.
         public event Action<IReadOnlyList<CardDefinition>> CardRewardOffered;
 
@@ -120,33 +123,30 @@ namespace RoguelikeUnity
         public void SelectClass(PlayerCharacter.ClassType selectedClass)
         {
             if (player == null) return;
+
             player.SetClass(selectedClass);
             Debug.Log($"직업 선택: {player.CurrentClassName}");
         }
 
-        // UI에서 0=검사, 1=마법사처럼 인덱스로 선택할 때 사용합니다.
+        // UI에서 0은 검사, 1은 마법사를 의미하는 인덱스로 선택합니다.
         public void SelectClass(int selectedIndex)
         {
-            if (selectedIndex == 1)
-                SelectClass(PlayerCharacter.ClassType.Mage);
-            else
-                SelectClass(PlayerCharacter.ClassType.Warrior);
+            SelectClass(selectedIndex == 1 ? PlayerCharacter.ClassType.Mage : PlayerCharacter.ClassType.Warrior);
         }
 
         // 새로운 런을 시작할 때 플레이어 상태와 스테이지를 초기화합니다.
         public void InitializeRun(PlayerCharacter.ClassType selectedClass)
         {
-            if (deckManager == null)
-                deckManager = new DeckManager();
+            EnsureManagers();
 
             deckManager.Clear();
             currentRewards.Clear();
             rewardPending = false;
             depth = 1;
             currentStage = StageType.Battle;
-            playerTurn = true;
             currentResult = GameResult.None;
             roomEnemies.Clear();
+            turnManager.StartPlayerTurn();
             BindBoss();
             SpawnBattleEnemy();
 
@@ -163,16 +163,27 @@ namespace RoguelikeUnity
             InitializeRun(selectedIndex == 1 ? PlayerCharacter.ClassType.Mage : PlayerCharacter.ClassType.Warrior);
         }
 
-        // 오브젝트가 처음 활성화될 때 덱 관리자와 보스 바인딩을 초기화합니다.
+        // 오브젝트가 처음 활성화될 때 덱 관리자와 턴 관리자, 보스 바인딩을 초기화합니다.
         private void Awake()
         {
-            deckManager = new DeckManager();
+            EnsureManagers();
+            turnManager.StartPlayerTurn();
 
             if (player != null)
                 player.SetClass(PlayerCharacter.ClassType.Warrior);
 
             BindBoss();
             StartCoroutine(LoadCardPool());
+        }
+
+        // 덱 관리자와 턴 관리자를 안전하게 초기화합니다.
+        private void EnsureManagers()
+        {
+            if (deckManager == null)
+                deckManager = new DeckManager();
+
+            if (turnManager == null)
+                turnManager = new TurnManager();
         }
 
         private void OnDestroy()
@@ -198,8 +209,10 @@ namespace RoguelikeUnity
             if (currentResult != GameResult.None) return;
 
             currentResult = result;
-            playerTurn = false;
             rewardPending = false;
+
+            if (turnManager != null)
+                turnManager.StartEnemyTurn();
 
             if (result == GameResult.Victory)
                 Debug.Log("승리 판정: 보스를 처치했습니다.");
@@ -216,7 +229,9 @@ namespace RoguelikeUnity
         // StreamingAssets/cards.csv를 읽어 보상 후보 목록을 구성합니다.
         private IEnumerator LoadCardPool()
         {
+            cardPool.Clear();
             yield return CardCatalog.Load(cards => cardPool.AddRange(cards));
+
             if (cardPool.Count == 0)
                 Debug.LogWarning("카드 후보가 없습니다. Assets/StreamingAssets/cards.csv를 확인하세요.");
         }
@@ -267,8 +282,9 @@ namespace RoguelikeUnity
         // 플레이어가 적을 공격할 때 호출됩니다.
         public void PlayerAttack(EnemyCharacter target)
         {
-            if (IsGameEnded || !playerTurn || rewardPending || player == null || target == null) return;
-            playerTurn = false;
+            if (IsGameEnded || !IsPlayerTurn || rewardPending || player == null || target == null) return;
+            if (turnManager != null)
+                turnManager.StartEnemyTurn();
             player.Attack(target);
 
             // 적이 모두 사망하면 보상 단계로 진행합니다.
@@ -284,8 +300,9 @@ namespace RoguelikeUnity
         // 플레이어가 턴을 넘길 때 호출됩니다.
         public void EndPlayerTurn()
         {
-            if (IsGameEnded || !playerTurn || rewardPending || player == null || !player.IsAlive) return;
-            playerTurn = false;
+            if (IsGameEnded || !IsPlayerTurn || rewardPending || player == null || !player.IsAlive) return;
+            if (turnManager != null)
+                turnManager.StartEnemyTurn();
             StartCoroutine(EnemyTurn());
         }
 
@@ -311,8 +328,8 @@ namespace RoguelikeUnity
                 yield break;
             }
 
-            if (!IsGameEnded)
-                playerTurn = true;
+            if (!IsGameEnded && turnManager != null)
+                turnManager.StartPlayerTurn();
         }
 
         // 방을 클리어했을 때 랜덤 보상 카드를 선택 목록으로 제공합니다.
@@ -358,7 +375,8 @@ namespace RoguelikeUnity
 
             depth++;
             currentStage = depth % 3 == 0 ? StageType.Boss : StageType.Battle;
-            playerTurn = true;
+            if (turnManager != null)
+                turnManager.StartPlayerTurn();
 
             if (currentStage == StageType.Battle)
                 SpawnBattleEnemy();
@@ -385,10 +403,7 @@ namespace RoguelikeUnity
         // T + 9를 누르면 개발자 모드가 토글되고, 개발자 모드가 활성화된 상태에서 + 키로 스테이지를 넘길 수 있습니다.
         private void Update()
         {
-            bool toggleDeveloperMode = (Input.GetKey(KeyCode.T) && (Input.GetKeyDown(KeyCode.Alpha9) || Input.GetKeyDown(KeyCode.Keypad9)))
-                || (Input.GetKeyDown(KeyCode.T) && Input.GetKey(KeyCode.Alpha9));
-
-            if (toggleDeveloperMode)
+            if (IsDeveloperModeTogglePressed())
             {
                 developerMode = !developerMode;
                 Debug.Log($"개발자 모드 {(developerMode ? "활성화" : "비활성화")}");
@@ -397,12 +412,25 @@ namespace RoguelikeUnity
 
             if (!developerMode) return;
 
-            bool plusPressed = Input.GetKeyDown(KeyCode.Plus)
+            if (IsStageSkipPressed())
+                SkipStageForDemo();
+        }
+
+        // 개발자 모드 전환 입력인지 확인합니다.
+        private static bool IsDeveloperModeTogglePressed()
+        {
+            bool tHeld = Input.GetKey(KeyCode.T);
+            bool key9Pressed = Input.GetKeyDown(KeyCode.Alpha9) || Input.GetKeyDown(KeyCode.Keypad9);
+
+            return (tHeld && key9Pressed) || (Input.GetKeyDown(KeyCode.T) && Input.GetKey(KeyCode.Alpha9));
+        }
+
+        // 스테이지 건너뛰기 입력인지 확인합니다.
+        private static bool IsStageSkipPressed()
+        {
+            return Input.GetKeyDown(KeyCode.Plus)
                 || Input.GetKeyDown(KeyCode.KeypadPlus)
                 || Input.GetKeyDown(KeyCode.Equals);
-
-            if (plusPressed)
-                SkipStageForDemo();
         }
 
         // 덱 화면을 열어 현재 보유/드로우/버리기 덱 상태를 표시합니다.
