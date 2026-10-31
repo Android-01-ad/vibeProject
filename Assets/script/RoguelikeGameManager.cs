@@ -44,8 +44,8 @@ namespace RoguelikeUnity
         // 덱 화면 UI를 제어하는 컨트롤러입니다.
         [SerializeField] private DeckScreenController deckScreen;
 
-        // 현재 플레이어가 보유한 덱입니다.
-        private readonly List<CardDefinition> deck = new List<CardDefinition>();
+        // 카드 덱 관리 객체입니다.
+        private DeckManager deckManager;
 
         // 카드 보상 후보가 될 수 있는 전체 카드 풀입니다.
         private readonly List<CardDefinition> cardPool = new List<CardDefinition>();
@@ -65,8 +65,17 @@ namespace RoguelikeUnity
         // 현재 스테이지 종류입니다.
         private StageType currentStage = StageType.Battle;
 
-        // 현재 덱을 외부에서 읽을 수 있게 하는 프로퍼티입니다.
-        public IReadOnlyList<CardDefinition> Deck => deck;
+        // 현재 보유 카드 덱을 외부에서 읽을 수 있게 하는 프로퍼티입니다.
+        public IReadOnlyList<CardDefinition> Deck => deckManager != null ? deckManager.Deck : Array.Empty<CardDefinition>();
+
+        // 현재 드로우 덱을 외부에서 읽기 위한 프로퍼티입니다.
+        public IReadOnlyList<CardDefinition> DrawDeck => deckManager != null ? deckManager.DrawDeck : Array.Empty<CardDefinition>();
+
+        // 현재 버리기 덱을 외부에서 읽기 위한 프로퍼티입니다.
+        public IReadOnlyList<CardDefinition> DiscardDeck => deckManager != null ? deckManager.DiscardDeck : Array.Empty<CardDefinition>();
+
+        // 덱 관리자 인스턴스를 외부에서 직접 참조할 수 있게 한 프로퍼티입니다.
+        public DeckManager DeckManagerInstance => deckManager;
 
         // 현재 보상 목록을 외부에서 읽을 수 있게 하는 프로퍼티입니다.
         public IReadOnlyList<CardDefinition> CurrentRewards => currentRewards;
@@ -119,7 +128,10 @@ namespace RoguelikeUnity
         // 전투 시작 전에 플레이어 직업을 초기화하고 상태를 리셋합니다.
         public void InitializeRun(PlayerCharacter.ClassType selectedClass)
         {
-            deck.Clear();
+            if (deckManager == null)
+                deckManager = new DeckManager();
+
+            deckManager.Clear();
             currentRewards.Clear();
             rewardPending = false;
             depth = 1;
@@ -146,7 +158,7 @@ namespace RoguelikeUnity
         {
             if (player == null) return;
             var before = player.CurrentClassName;
-            player.TryPromoteFromDeck(deck);
+            player.TryPromoteFromDeck(deckManager != null ? deckManager.Deck : Array.Empty<CardDefinition>());
 
             if (!string.Equals(before, player.CurrentClassName, StringComparison.Ordinal))
                 Debug.Log($"전직! {before} → {player.CurrentClassName}");
@@ -155,8 +167,7 @@ namespace RoguelikeUnity
         // 게임 오브젝트가 처음 활성화될 때 초기 상태를 설정합니다.
         private void Awake()
         {
-            // 새 런 시작 시 덱을 비웁니다.
-            deck.Clear();
+            deckManager = new DeckManager();
 
             if (player != null)
                 player.SetClass(PlayerCharacter.ClassType.Warrior);
@@ -285,8 +296,8 @@ namespace RoguelikeUnity
             if (IsGameEnded || !rewardPending || choiceIndex < 0 || choiceIndex >= currentRewards.Count) return;
 
             var chosenCard = currentRewards[choiceIndex];
-            deck.Add(chosenCard);
-            Debug.Log($"{chosenCard.Name} 카드를 덱에 추가했습니다. 현재 {deck.Count}장");
+            if (deckManager != null)
+                deckManager.AddCardToOwnedDeck(chosenCard);
 
             EvaluateClassPromotion();
 
@@ -350,8 +361,8 @@ namespace RoguelikeUnity
         // 덱 화면을 표시합니다.
         public void ShowDeck()
         {
-            if (deckScreen != null) deckScreen.Show(deck);
-            else Debug.Log($"현재 덱: {deck.Count}장");
+            if (deckScreen != null && deckManager != null) deckScreen.Show(deckManager.Deck);
+            else if (deckManager != null) Debug.Log($"현재 보유 덱: {deckManager.Deck.Count}장 / 드로우 덱: {deckManager.DrawDeck.Count}장 / 버리기 덱: {deckManager.DiscardDeck.Count}장");
         }
 
         // 덱 화면을 숨깁니다.
