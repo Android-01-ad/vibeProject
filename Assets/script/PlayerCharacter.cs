@@ -21,6 +21,12 @@ namespace RoguelikeUnity
             Master
         }
 
+        public enum CardUseType
+        {
+            Combat,
+            Exploration
+        }
+
         // 플레이어의 기본 최대 체력입니다. 최소 1 이상이어야 합니다.
         [SerializeField, Min(1)] private int maxHp = 30;
 
@@ -176,6 +182,24 @@ namespace RoguelikeUnity
             }
 
             Hp = Mathf.Clamp(Hp, 0, maxHp);
+        }
+
+        // 특정 필드 오브젝트를 카드 사용으로 처리합니다.
+        // 전투 카드: 장애물을 파괴하고, 탐험 카드: 보물 상자를 열어 애니메이션 후 제거합니다.
+        public void TryUseCardOnField(GameObject target, CardUseType cardUseType)
+        {
+            if (target == null) return;
+
+            if (target.TryGetComponent(out ObstacleObject obstacle))
+            {
+                obstacle.TryUse(this, cardUseType);
+                return;
+            }
+
+            if (target.TryGetComponent(out TreasureChestObject treasureChest))
+            {
+                treasureChest.TryUse(this, cardUseType);
+            }
         }
 
         // 적을 공격합니다.
