@@ -153,17 +153,6 @@ namespace RoguelikeUnity
             InitializeRun(selectedIndex == 1 ? PlayerCharacter.ClassType.Mage : PlayerCharacter.ClassType.Warrior);
         }
 
-        // 덱에 따라 전직 조건을 검사하고, 조건을 만족하면 플레이어 직업을 강화합니다.
-        public void EvaluateClassPromotion()
-        {
-            if (player == null) return;
-            var before = player.CurrentClassName;
-            player.TryPromoteFromDeck(deckManager != null ? deckManager.Deck : Array.Empty<CardDefinition>());
-
-            if (!string.Equals(before, player.CurrentClassName, StringComparison.Ordinal))
-                Debug.Log($"전직! {before} → {player.CurrentClassName}");
-        }
-
         // 게임 오브젝트가 처음 활성화될 때 초기 상태를 설정합니다.
         private void Awake()
         {
@@ -298,8 +287,6 @@ namespace RoguelikeUnity
             var chosenCard = currentRewards[choiceIndex];
             if (deckManager != null)
                 deckManager.AddCardToOwnedDeck(chosenCard);
-
-            EvaluateClassPromotion();
 
             currentRewards.Clear();
             rewardPending = false;

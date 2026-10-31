@@ -14,13 +14,6 @@ namespace RoguelikeUnity
             Mage
         }
 
-        public enum ClassRank
-        {
-            Novice,
-            Veteran,
-            Master
-        }
-
         public enum CardUseType
         {
             Combat,
@@ -36,11 +29,11 @@ namespace RoguelikeUnity
         // 현재 직업 종류입니다. 시작 시 검사 또는 마법사 중 하나를 선택합니다.
         private ClassType classType = ClassType.Warrior;
 
-        // 현재 직업 단계입니다. 초보, 기사/마도사, 대장군/대마법사까지 올라갈 수 있습니다.
-        private ClassRank classRank = ClassRank.Novice;
-
         // 현재 직업 이름입니다. UI 출력용입니다.
         private string currentClassName = "검사";
+
+        // 플레이어의 직업별 스프라이트를 관리하는 컨트롤러입니다.
+        private PlayerClassSpriteController classSpriteController;
 
         // 최대 체력을 외부에서 읽기 위한 프로퍼티입니다.
         public int MaxHp => maxHp;
@@ -57,22 +50,58 @@ namespace RoguelikeUnity
         // 현재 직업 종류를 외부에서 확인할 수 있습니다.
         public ClassType CurrentClassType => classType;
 
-        // 현재 전직 단계 여부를 확인합니다.
-        public ClassRank CurrentClassRank => classRank;
-
         // 현재 직업 이름입니다.
         public string CurrentClassName => currentClassName;
 
         // 컴포넌트가 활성화될 때 체력을 초기값으로 설정합니다.
-        private void Awake() => Hp = maxHp;
+        private void Awake()
+        {
+            Hp = maxHp;
+            classSpriteController = GetComponent<PlayerClassSpriteController>();
+            if (classSpriteController == null)
+                classSpriteController = GetComponentInChildren<PlayerClassSpriteController>();
+
+            ApplyClassStats();
+        }
 
         // 게임 시작 시 직업을 지정합니다.
         public void SetClass(ClassType selectedClass)
         {
             classType = selectedClass;
-            classRank = ClassRank.Novice;
             ApplyClassStats();
             Hp = maxHp;
+        }
+
+        // 직업을 검사와 마법사 사이에서 전환합니다.
+        // 새 전직/전직 해제 로직을 구현할 때 그대로 사용할 수 있습니다.
+        public void ToggleClass()
+        {
+            SetClass(classType == ClassType.Warrior ? ClassType.Mage : ClassType.Warrior);
+        }
+
+        // 특정 장비/도구 카드 목록을 검사해 전직 조건을 만족하면 직업을 전환합니다.
+        // 장비가 검사 계열이면 검사로, 마법 계열이면 마법사로 바뀝니다.
+        public void UpdateClassByUpperCards(IEnumerable<CardDefinition> equipmentCards, IEnumerable<CardDefinition> toolCards)
+        {
+            if (equipmentCards == null && toolCards == null)
+                return;
+
+            var equipment = equipmentCards ?? Enumerable.Empty<CardDefinition>();
+            var tools = toolCards ?? Enumerable.Empty<CardDefinition>();
+
+            var warriorCondition = equipment.Any(IsWarriorClassCard) || tools.Any(IsWarriorClassCard);
+            var mageCondition = equipment.Any(IsMageClassCard) || tools.Any(IsMageClassCard);
+
+            if (warriorCondition && !mageCondition)
+            {
+                SetClass(ClassType.Warrior);
+                return;
+            }
+
+            if (mageCondition && !warriorCondition)
+            {
+                SetClass(ClassType.Mage);
+            }
         }
 
         // UI에서 0=검사, 1=마법사처럼 인덱스로 직업을 선택할 때 사용합니다.
@@ -81,107 +110,44 @@ namespace RoguelikeUnity
             SetClass(selectedIndex == 1 ? ClassType.Mage : ClassType.Warrior);
         }
 
-        // 덱의 조합을 검사해서 전직 조건을 만족하면 직업을 강화합니다.
-        public void TryPromoteFromDeck(IReadOnlyList<CardDefinition> deck)
+        private static bool IsWarriorClassCard(CardDefinition card)
         {
-            if (deck == null || deck.Count == 0) return;
-
-            var promoted = false;
-
-            switch (classType)
-            {
-                case ClassType.Warrior:
-                    if (deck.Count >= 5 && deck.Any(card => ContainsAny(card.Name, "검", "칼", "검사", "강타", "방어")))
-                    {
-                        classRank = ClassRank.Veteran;
-                        promoted = true;
-                    }
-
-                    if (deck.Count >= 8 && deck.Any(card => ContainsAny(card.Name, "방패", "대검", "철벽", "강화")))
-                    {
-                        classRank = ClassRank.Master;
-                        promoted = true;
-                    }
-                    break;
-
-                case ClassType.Mage:
-                    if (deck.Count >= 5 && deck.Any(card => ContainsAny(card.Name, "마법", "파이어", "아이스", "번개", "비전", "소환")))
-                    {
-                        classRank = ClassRank.Veteran;
-                        promoted = true;
-                    }
-
-                    if (deck.Count >= 8 && deck.Any(card => ContainsAny(card.Name, "소환", "궁극", "폭풍", "얼음", "화염", "수호")))
-                    {
-                        classRank = ClassRank.Master;
-                        promoted = true;
-                    }
-                    break;
-            }
-
-            if (promoted)
-            {
-                ApplyClassStats();
-            }
+            if (card == null) return false;
+            var combinedText = $"{card.Name} {card.Description}".ToLower();
+            var warriorKeywords = new[] { "검", "검사", "기사", "방패", "강철", "대검", "칼", "무기", "전사" };
+            return warriorKeywords.Any(keyword => combinedText.Contains(keyword));
         }
 
-        // 문자열에 포함된 키워드가 하나라도 있는지 검사합니다.
-        private bool ContainsAny(string source, params string[] keywords)
+        private static bool IsMageClassCard(CardDefinition card)
         {
-            if (string.IsNullOrEmpty(source)) return false;
-            var normalized = source.ToLower();
-            return keywords.Any(keyword => !string.IsNullOrEmpty(keyword) && normalized.Contains(keyword.ToLower()));
+            if (card == null) return false;
+            var combinedText = $"{card.Name} {card.Description}".ToLower();
+            var mageKeywords = new[] { "마법", "마법사", "스태프", "지팡이", "봉인", "소환", "비전", "마도", "룬", "신성" };
+            return mageKeywords.Any(keyword => combinedText.Contains(keyword));
         }
 
-        // 직업과 전직 단계에 따라 체력, 공격력을 다시 계산합니다.
+        // 직업에 따라 체력, 공격력을 다시 계산합니다.
         private void ApplyClassStats()
         {
             switch (classType)
             {
                 case ClassType.Warrior:
-                    switch (classRank)
-                    {
-                        case ClassRank.Novice:
-                            maxHp = 30;
-                            attackPower = 6;
-                            currentClassName = "검사";
-                            break;
-                        case ClassRank.Veteran:
-                            maxHp = 40;
-                            attackPower = 9;
-                            currentClassName = "기사";
-                            break;
-                        case ClassRank.Master:
-                            maxHp = 55;
-                            attackPower = 13;
-                            currentClassName = "대장군";
-                            break;
-                    }
+                    maxHp = 30;
+                    attackPower = 6;
+                    currentClassName = "검사";
                     break;
 
                 case ClassType.Mage:
-                    switch (classRank)
-                    {
-                        case ClassRank.Novice:
-                            maxHp = 22;
-                            attackPower = 8;
-                            currentClassName = "마법사";
-                            break;
-                        case ClassRank.Veteran:
-                            maxHp = 30;
-                            attackPower = 12;
-                            currentClassName = "마도사";
-                            break;
-                        case ClassRank.Master:
-                            maxHp = 40;
-                            attackPower = 18;
-                            currentClassName = "대마법사";
-                            break;
-                    }
+                    maxHp = 22;
+                    attackPower = 8;
+                    currentClassName = "마법사";
                     break;
             }
 
             Hp = Mathf.Clamp(Hp, 0, maxHp);
+
+            if (classSpriteController != null)
+                classSpriteController.Apply(classType, PlayerClassSpriteController.SpriteRank.Novice);
         }
 
         // 특정 필드 오브젝트를 카드 사용으로 처리합니다.

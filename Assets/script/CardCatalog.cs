@@ -80,8 +80,26 @@ namespace RoguelikeUnity
                 if (fields.Count < 2 || string.IsNullOrWhiteSpace(fields[0]))
                     throw new FormatException($"{i + 1}행에 Name 또는 Description 열이 없습니다.");
 
-                // 첫 번째 값은 카드 이름, 두 번째 값은 카드 설명으로 저장합니다.
-                cards.Add(new CardDefinition(fields[0].Trim(), fields[1].Trim()));
+                // 첫 번째 값은 카드 이름, 두 번째 값은 카드 설명, 세 번째 값은 카드 등급(하위/상위)으로 저장합니다.
+                var tier = CardDefinition.CardTier.Lower;
+                if (fields.Count >= 3 && !string.IsNullOrWhiteSpace(fields[2]))
+                {
+                    var rawTier = fields[2].Trim();
+                    if (rawTier.Equals("Upper", StringComparison.OrdinalIgnoreCase) ||
+                        rawTier.Equals("상위", StringComparison.OrdinalIgnoreCase) ||
+                        rawTier.Equals("Equipment", StringComparison.OrdinalIgnoreCase) ||
+                        rawTier.Equals("Tool", StringComparison.OrdinalIgnoreCase))
+                    {
+                        tier = CardDefinition.CardTier.Upper;
+                    }
+                    else if (rawTier.Equals("Lower", StringComparison.OrdinalIgnoreCase) ||
+                             rawTier.Equals("하위", StringComparison.OrdinalIgnoreCase))
+                    {
+                        tier = CardDefinition.CardTier.Lower;
+                    }
+                }
+
+                cards.Add(new CardDefinition(fields[0].Trim(), fields[1].Trim(), tier));
             }
 
             return cards;
