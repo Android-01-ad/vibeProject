@@ -18,6 +18,17 @@ namespace RoguelikeUnity
             Defeat
         }
 
+        // 현재 스테이지 유형입니다.
+        // 전투 스테이지: 적을 쓰러뜨리는 전투 구간
+        // 보상 스테이지: 카드 보상을 선택하는 구간
+        // 보스 스테이지: 보스를 상대하는 특수 구간
+        public enum StageType
+        {
+            Battle,
+            Reward,
+            Boss
+        }
+
         // 씬에 배치된 참조 객체들을 연결하는 영역입니다.
         [Header("Scene references")]
 
@@ -51,6 +62,9 @@ namespace RoguelikeUnity
         // 현재 탐험 깊이(층 수)입니다.
         private int depth = 1;
 
+        // 현재 스테이지 종류입니다.
+        private StageType currentStage = StageType.Battle;
+
         // 현재 덱을 외부에서 읽을 수 있게 하는 프로퍼티입니다.
         public IReadOnlyList<CardDefinition> Deck => deck;
 
@@ -59,6 +73,15 @@ namespace RoguelikeUnity
 
         // 현재 깊이(층)를 외부에서 읽기 위한 프로퍼티입니다.
         public int Depth => depth;
+
+        // 현재 스테이지 종류를 외부에서 읽기 위한 프로퍼티입니다.
+        public StageType CurrentStage => currentStage;
+
+        // 개발자 모드가 활성화되었는지 여부입니다.
+        private bool developerMode;
+
+        // 개발자 모드 상태를 외부에서 확인할 수 있습니다.
+        public bool DeveloperModeEnabled => developerMode;
 
         // 현재 결과 상태입니다. None이면 게임이 계속 진행 중입니다.
         private GameResult currentResult = GameResult.None;
@@ -100,6 +123,7 @@ namespace RoguelikeUnity
             currentRewards.Clear();
             rewardPending = false;
             depth = 1;
+            currentStage = StageType.Battle;
             playerTurn = true;
             currentResult = GameResult.None;
             BindBoss();
@@ -238,6 +262,8 @@ namespace RoguelikeUnity
         // 방을 클리어했을 때 보상 카드를 랜덤으로 선택해 제공합니다.
         private void OpenCardReward()
         {
+            currentStage = StageType.Reward;
+
             // 카드 풀에서 무작위로 3장 이하를 고릅니다.
             currentRewards = cardPool.OrderBy(_ => Random.value).Take(Mathf.Min(3, cardPool.Count)).ToList();
 
@@ -270,13 +296,55 @@ namespace RoguelikeUnity
         }
 
         // 다음 층으로 이동하는 처리입니다.
-        // 현재는 깊이만 증가시키고, 이후 방 생성 로직이 들어갈 자리입니다.
+        // 3층마다 보스 스테이지가 등장하고, 그 외에는 전투 스테이지를 유지합니다.
         private void AdvanceDepth()
         {
             if (IsGameEnded) return;
+
             depth++;
+            currentStage = depth % 3 == 0 ? StageType.Boss : StageType.Battle;
             playerTurn = true;
+
+            Debug.Log($"스테이지 이동: {depth}층 / {currentStage}");
             // Connect room generation here, then assign the new room's enemies to roomEnemies.
+        }
+
+        // 개발자 모드에서 스테이지를 한 번 건너뛰는 메서드입니다.
+        public void SkipStageForDemo()
+        {
+            if (!developerMode || IsGameEnded) return;
+
+            if (rewardPending)
+            {
+                currentRewards.Clear();
+                rewardPending = false;
+            }
+
+            AdvanceDepth();
+            Debug.Log("개발자 모드: 플러스 키로 스테이지를 건너뜁니다.");
+        }
+
+        // 개발자 모드 및 스테이지 건너뛰기 입력을 처리합니다.
+        private void Update()
+        {
+            bool toggleDeveloperMode = (Input.GetKey(KeyCode.T) && (Input.GetKeyDown(KeyCode.Alpha9) || Input.GetKeyDown(KeyCode.Keypad9)))
+                || (Input.GetKeyDown(KeyCode.T) && Input.GetKey(KeyCode.Alpha9));
+
+            if (toggleDeveloperMode)
+            {
+                developerMode = !developerMode;
+                Debug.Log($"개발자 모드 {(developerMode ? "활성화" : "비활성화")}");
+                return;
+            }
+
+            if (!developerMode) return;
+
+            bool plusPressed = Input.GetKeyDown(KeyCode.Plus)
+                || Input.GetKeyDown(KeyCode.KeypadPlus)
+                || Input.GetKeyDown(KeyCode.Equals);
+
+            if (plusPressed)
+                SkipStageForDemo();
         }
 
         // 덱 화면을 표시합니다.
